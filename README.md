@@ -1,5 +1,16 @@
 # Research-Driven Multilingual RAG System
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/BGE--M3-Multilingual%20Embeddings-blueviolet?style=for-the-badge" alt="BGE-M3"/>
+  <img src="https://img.shields.io/badge/Groq-LLM%20Inference-F55036?style=for-the-badge" alt="Groq"/>
+  <img src="https://img.shields.io/badge/RAG-Hybrid%20Retrieval-2E8B57?style=for-the-badge" alt="Retrieval-Augmented Generation"/>
+  <img src="https://img.shields.io/badge/RRF-Rank%20Fusion-6C5CE7?style=for-the-badge" alt="Reciprocal Rank Fusion"/>
+  <img src="https://img.shields.io/badge/pytest-Testing-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="pytest"/>
+</p>
+
+
 **Evidence-Grounded Retrieval-Augmented Generation for Arabic–English Learning Content**
 
 A research-driven RAG application designed to retrieve relevant learning evidence across Arabic and English, assess whether that evidence is sufficient, and produce source-attributed answers with readable mathematical notation. The system combines multilingual embeddings, hybrid semantic–lexical search with Reciprocal Rank Fusion (RRF), bounded retrieval recovery, controlled abstention, and a UI built for mixed Arabic-English technical content.
