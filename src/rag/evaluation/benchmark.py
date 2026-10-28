@@ -11,7 +11,15 @@ from ..embeddings.hashing import HashingEmbedder
 from ..generation.llm import LLMClient, OpenAICompatibleLLM
 from ..pipeline import RagEngine
 from ..store.memory import InMemoryVectorStore
-from .metrics import hit_at_k, recall_at_k, token_f1
+from .metrics import (
+    hit_at_k,
+    mrr_at_k,
+    ndcg_at_k,
+    precision_at_k,
+    recall_at_k,
+    refusal_metrics,
+    token_f1,
+)
 
 
 @dataclass(frozen=True)
@@ -32,6 +40,7 @@ class BenchQuestion:
     case_type: str
     reference: str = ""
     expect_abstain: bool = False
+    gold_chunk_ids: tuple[str, ...] = ()
 
 
 TOY_DOCS: tuple[ToyDoc, ...] = (
@@ -96,6 +105,19 @@ TOY_DOCS: tuple[ToyDoc, ...] = (
                 "Normal",
                 "The Industrial Revolution began in Britain in the late eighteenth century and "
                 "transformed manufacturing through mechanization and steam power.",
+            ),
+        ),
+    ),
+    ToyDoc(
+        document_id="math_notation",
+        course_id="math101",
+        filename="math_notation.docx",
+        blocks=(
+            ("Heading 1", "Mathematical notation"),
+            (
+                "Normal",
+                "The scalar λ₁ satisfies det(A − λ₁I) = 0. "
+                "The polynomial x² = 4 has roots 2 and −2.",
             ),
         ),
     ),
@@ -174,6 +196,44 @@ QUESTIONS: tuple[BenchQuestion, ...] = (
         case_type="false_premise",
         expect_abstain=True,
     ),
+    BenchQuestion(
+        qid="q9",
+        course_id="math101",
+        question="ما هي linear equation؟",
+        gold_docs=("algebra_ar",),
+        language="mixed_ar_en",
+        case_type="mixed_language",
+        reference="المعادلة الخطية",
+    ),
+    BenchQuestion(
+        qid="q10",
+        course_id="math101",
+        question="اشرح Cramer's rule باستخدام determinants",
+        gold_docs=("algebra_ar",),
+        language="mixed_ar_en",
+        case_type="mixed_language",
+        reference="حل الأنظمة الخطية باستخدام المحددات",
+    ),
+    BenchQuestion(
+        qid="q11",
+        course_id="math101",
+        question="What does lambda_1 satisfy?",
+        gold_docs=("math_notation",),
+        language="en",
+        case_type="math_symbol_notation",
+        reference="det(A − λ₁I) = 0",
+        gold_chunk_ids=("math_notation#0",),
+    ),
+    BenchQuestion(
+        qid="q12",
+        course_id="math101",
+        question="How is x^2 represented?",
+        gold_docs=("math_notation",),
+        language="en",
+        case_type="math_symbol_notation",
+        reference="x² = 4",
+        gold_chunk_ids=("math_notation#0",),
+    ),
 )
 
 
@@ -239,34 +299,114 @@ def run_benchmark(
         for question in QUESTIONS:
             scope = Scope(tenant_id=tenant_id, course_ids=frozenset({question.course_id}))
             results, diagnostics = engine.retrieve(scope, question.question, top_k)
-            retrieved = [r.chunk.document_id for r in results]
+            retrieved = list(dict.fromkeys(r.chunk.document_id for r in results))
+            retrieved_chunks = [r.chunk.chunk_id for r in results]
+            metric_retrieved = (
+                retrieved_chunks
+                if question.gold_chunk_ids
+                else retrieved
+            )
+            metric_gold = (
+                list(question.gold_chunk_ids)
+                if question.gold_chunk_ids
+                else list(question.gold_docs)
+            )
             row = {
                 "qid": question.qid,
                 "language": question.language,
                 "case_type": question.case_type,
                 "retrieved": retrieved,
+                "retrieved_chunks": retrieved_chunks,
+                "metric_level": "chunk" if question.gold_chunk_ids else "document",
                 "top_score": round(diagnostics.top_score, 4),
-                "hit": hit_at_k(retrieved, list(question.gold_docs)) if question.gold_docs else None,
-                "recall": recall_at_k(retrieved, list(question.gold_docs)) if question.gold_docs else None,
+                "hit": hit_at_k(metric_retrieved[:top_k], metric_gold) if metric_gold else None,
+                "recall": recall_at_k(metric_retrieved[:top_k], metric_gold) if metric_gold else None,
+                "precision": precision_at_k(metric_retrieved, metric_gold, top_k) if metric_gold else None,
+                "mrr": mrr_at_k(metric_retrieved, metric_gold, top_k) if metric_gold else None,
+                "ndcg": ndcg_at_k(metric_retrieved, metric_gold, top_k) if metric_gold else None,
                 "answer_f1": None,
                 "abstained": None,
+                "expected_abstain": question.expect_abstain,
+                "refusal_correct": None,
             }
             if llm is not None:
                 answer = engine.answer(question.question, scope, top_k)
                 row["abstained"] = answer.abstained
+                row["refusal_correct"] = answer.abstained == question.expect_abstain
                 if question.reference:
                     row["answer_f1"] = round(token_f1(answer.answer, question.reference), 4)
             rows.append(row)
 
-    scored = [r for r in rows if r["hit"] is not None]
+    document_scored = [
+        row
+        for row in rows
+        if row["hit"] is not None and row["metric_level"] == "document"
+    ]
+    chunk_scored = [
+        row
+        for row in rows
+        if row["hit"] is not None and row["metric_level"] == "chunk"
+    ]
+
+    def summarize_retrieval(rows_to_score: list[dict]) -> dict:
+        if not rows_to_score:
+            return {
+                "questions": 0,
+                "hit_at_k": None,
+                "recall_at_k": None,
+                "precision_at_k": None,
+                "mrr_at_k": None,
+                "ndcg_at_k": None,
+            }
+        return {
+            "questions": len(rows_to_score),
+            "hit_at_k": round(
+                sum(row["hit"] for row in rows_to_score) / len(rows_to_score),
+                4,
+            ),
+            "recall_at_k": round(
+                sum(row["recall"] for row in rows_to_score) / len(rows_to_score),
+                4,
+            ),
+            "precision_at_k": round(
+                sum(row["precision"] for row in rows_to_score) / len(rows_to_score),
+                4,
+            ),
+            "mrr_at_k": round(
+                sum(row["mrr"] for row in rows_to_score) / len(rows_to_score),
+                4,
+            ),
+            "ndcg_at_k": round(
+                sum(row["ndcg"] for row in rows_to_score) / len(rows_to_score),
+                4,
+            ),
+        }
+
+    document_metrics = summarize_retrieval(document_scored)
+    chunk_metrics = summarize_retrieval(chunk_scored)
+    refusal_rows = [r for r in rows if r["abstained"] is not None]
+    refusal_summary = refusal_metrics(
+        [bool(r["abstained"]) for r in refusal_rows],
+        [bool(r["expected_abstain"]) for r in refusal_rows],
+    ) if refusal_rows else None
     summary = {
         "embedder": embedder_label,
         "llm": llm_label,
         "top_k": top_k,
         "questions": len(rows),
-        "scored_questions": len(scored),
-        "hit_at_k": round(sum(r["hit"] for r in scored) / len(scored), 4) if scored else None,
-        "recall_at_k": round(sum(r["recall"] for r in scored) / len(scored), 4) if scored else None,
+        "scored_questions": document_metrics["questions"],
+        "chunk_scored_questions": chunk_metrics["questions"],
+        "hit_at_k": document_metrics["hit_at_k"],
+        "recall_at_k": document_metrics["recall_at_k"],
+        "precision_at_k": document_metrics["precision_at_k"],
+        "mrr_at_k": document_metrics["mrr_at_k"],
+        "ndcg_at_k": document_metrics["ndcg_at_k"],
+        "retrieval_metrics_by_level": {
+            "document": document_metrics,
+            "chunk": chunk_metrics,
+        },
+        "refusal_metrics": refusal_summary,
+        "refusal_scored_questions": len(refusal_rows),
         "rows": rows,
     }
     return summary

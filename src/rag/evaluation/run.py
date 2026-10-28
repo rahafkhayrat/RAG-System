@@ -36,6 +36,16 @@ def main(argv: list[str] | None = None) -> int:
         f"questions={summary['questions']}  scored={summary['scored_questions']}  "
         f"hit@k={summary['hit_at_k']}  recall@k={summary['recall_at_k']}"
     )
+    if summary.get("refusal_metrics") is not None:
+        metrics = summary["refusal_metrics"]
+        print(
+            f"refusal_scored={summary['refusal_scored_questions']}  "
+            f"refusal_precision={metrics['precision']}  "
+            f"refusal_recall={metrics['recall']}  "
+            f"refusal_accuracy={metrics['accuracy']}"
+        )
+    else:
+        print("refusal_metrics=not evaluated (run with --use-llm)")
     return 0
 
 

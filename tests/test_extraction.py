@@ -34,3 +34,10 @@ def test_extract_rejects_empty_document(tmp_path):
     docx.Document().save(str(path))
     with pytest.raises(ValueError):
         extract_document(path, tenant_id="t1", course_id="c1", document_id="doc1")
+
+
+def test_extract_rejects_damaged_docx_with_clear_value_error(tmp_path):
+    path = tmp_path / "damaged.docx"
+    path.write_text("not a real docx", encoding="utf-8")
+    with pytest.raises(ValueError, match="could not read damaged.docx"):
+        extract_document(path, tenant_id="t1", course_id="c1", document_id="doc1")

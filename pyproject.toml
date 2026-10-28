@@ -9,7 +9,11 @@ dependencies = [
     "numpy>=1.26",
     "openai>=1.30",
     "python-dotenv>=1.0",
-]
+    "fastapi>=0.115",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.34",
+    "werkzeug>=3.1",
+    ]
 
 [project.optional-dependencies]
 embeddings = ["sentence-transformers>=3.0"]
@@ -18,7 +22,7 @@ embeddings = ["sentence-transformers>=3.0"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-rag-benchmark = "rag.eval.run:main"
+rag-benchmark = "rag.evaluation.run:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -18,12 +18,17 @@ def extract_document(
         raise FileNotFoundError(str(p))
 
     suffix = p.suffix.lower()
-    if suffix == ".pdf":
-        pages = _extract_pdf(p)
-    elif suffix == ".docx":
-        pages = _extract_docx(p)
-    else:
-        raise ValueError(f"unsupported file type: {suffix or '<none>'}")
+    try:
+        if suffix == ".pdf":
+            pages = _extract_pdf(p)
+        elif suffix == ".docx":
+            pages = _extract_docx(p)
+        else:
+            raise ValueError(f"unsupported file type: {suffix or '<none>'}")
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"could not read {p.name}: invalid, damaged, or unsupported document") from exc
 
     pages = tuple(pg for pg in pages if pg.text.strip())
     if not pages:
